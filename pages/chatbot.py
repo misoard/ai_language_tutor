@@ -168,6 +168,53 @@ if completed_sessions:
 
 st.sidebar.markdown("---")
 
+# --- PDF Generation Button ---
+st.sidebar.markdown("### 📄 Export Summary")
+if st.sidebar.button("📄 Generate PDF Summary", use_container_width=True):
+    if not st.session_state.messages:
+        st.sidebar.error("No messages to summarize!")
+    else:
+        with st.sidebar:
+            with st.spinner("Generating PDF..."):
+                try:
+                    from utils import pdf_generator
+                    
+                    # Check if this is a session or free chat
+                    if st.session_state.current_session_id:
+                        # Session PDF
+                        messages = storage.get_messages_by_session(st.session_state.current_session_id)
+                        pdf_path = pdf_generator.generate_session_pdf(
+                            st.session_state.current_session_id,
+                            messages,
+                            LANGUAGE
+                        )
+                        # Update session with PDF path
+                        storage.update_session(st.session_state.current_session_id, {"pdf_path": pdf_path})
+                    else:
+                        # Free chat PDF
+                        pdf_path = pdf_generator.generate_free_chat_pdf(
+                            st.session_state.messages,
+                            LANGUAGE
+                        )
+                    
+                    st.sidebar.success("Summary generated!")
+                    
+                    # Offer download (HTML file)
+                    with open(pdf_path, "r", encoding="utf-8") as html_file:
+                        html_content = html_file.read()
+                        st.sidebar.download_button(
+                            label="⬇️ Download HTML Summary",
+                            data=html_content,
+                            file_name=pdf_path.split("/")[-1],
+                            mime="text/html",
+                            use_container_width=True
+                        )
+                        st.sidebar.info("📄 Open the HTML file in your browser and use Print→Save as PDF")
+                except Exception as e:
+                    st.sidebar.error(f"Error generating PDF: {str(e)}")
+
+st.sidebar.markdown("---")
+
 # Load vocabulary list
 vocab_list = storage.load_vocabulary()
 
@@ -356,6 +403,21 @@ if st.session_state.get("show_end_session_dialog", False):
             # Save summary and complete session
             storage.complete_session(st.session_state.current_session_id, summary_data)
             storage.update_session(st.session_state.current_session_id, {"message_count": len(session_messages)})
+            
+            # Generate PDF automatically
+            with st.spinner("Generating PDF summary..."):
+                try:
+                    from utils import pdf_generator
+                    pdf_path = pdf_generator.generate_session_pdf(
+                        st.session_state.current_session_id,
+                        session_messages,
+                        LANGUAGE
+                    )
+                    # Save PDF path to session
+                    storage.update_session(st.session_state.current_session_id, {"pdf_path": pdf_path})
+                    st.success("PDF summary generated!")
+                except Exception as e:
+                    st.warning(f"Session saved, but PDF generation failed: {str(e)}")
             
             # Clear session
             st.session_state.current_session_id = None

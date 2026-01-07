@@ -105,6 +105,7 @@ def create_session(lesson_key, assignment):
         "understood": None,
         "difficulties": None,
         "common_mistakes": [],
+        "pdf_path": None,
         "status": "in_progress"
     }
     sessions.append(new_session)
