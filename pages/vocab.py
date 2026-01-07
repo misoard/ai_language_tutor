@@ -56,7 +56,7 @@ if vocab_list:
         if col2.button("❌", key=f"delete_{i}"):  # Inline delete button
             vocab_list.pop(i)
             storage.save_vocabulary(vocab_list)
-            st.experimental_rerun()  # Refresh UI after deletion
+            st.rerun()  # Refresh UI after deletion
 else:
     st.sidebar.write("No words in your vocabulary.")
 
@@ -126,7 +126,7 @@ if st.sidebar.button("Add Word"):
                     storage.save_vocabulary(vocab_list)
                     
                     st.success(f"Added '{new_word}' with translation and example.")
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Failed to parse translation and example. Please try again.")
 

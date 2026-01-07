@@ -120,13 +120,46 @@ with st.sidebar:
                     # Save lesson plan
                     st.session_state.lesson_plan = formatted_plan
                     storage.save_lesson_plan(st.session_state.lesson_plan)
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Error: AI response did not include 'lesson_plan' key. Try again.")
             except json.JSONDecodeError:
                 st.error("Error: AI response was not valid JSON. Try again.")
         else:
             st.error("Error: AI did not return JSON. Please try again.")
+
+# --- Practice Dialog ---
+if st.session_state.get("practice_dialog", {}).get("show", False):
+    dialog = st.session_state.practice_dialog
+    
+    st.warning("⚠️ You have an in-progress session for this assignment.")
+    col1, col2, col3 = st.columns([1, 1, 2])
+    
+    with col1:
+        if st.button("▶️ Continue Session", type="primary"):
+            st.session_state.start_session_data = {
+                "action": "continue",
+                "session_id": dialog["existing_session_id"]
+            }
+            st.session_state.practice_dialog = {"show": False}
+            st.switch_page("pages/chatbot.py")
+    
+    with col2:
+        if st.button("🔄 Start New Session"):
+            st.session_state.start_session_data = {
+                "action": "new",
+                "lesson_key": dialog["lesson_key"],
+                "assignment": dialog["assignment"]
+            }
+            st.session_state.practice_dialog = {"show": False}
+            st.switch_page("pages/chatbot.py")
+    
+    with col3:
+        if st.button("❌ Cancel"):
+            st.session_state.practice_dialog = {"show": False}
+            st.rerun()
+    
+    st.markdown("---")
 
 # --- 📝 Display and Manage Lesson Plan ---
 if not st.session_state.lesson_plan:
@@ -161,22 +194,47 @@ else:
                 if completed != assignment["completed"]:
                     st.session_state.lesson_plan[i]["assignments"][j]["completed"] = completed
                     storage.save_lesson_plan(st.session_state.lesson_plan)
+                    
+                    # If marking as completed, check if there's an active session to end
+                    if completed:
+                        session = storage.get_session_by_assignment(lesson["week_or_day"], assignment["title"])
+                        if session and session["status"] == "in_progress":
+                            # Auto-trigger session end (user will need to confirm in chatbot)
+                            st.info(f"💡 Assignment completed! Remember to end the session in the chatbot.")
 
             # Play button to practice this item
             with col2:
                 if st.button("▶️ Practice", key=f"play_{i}_{j}"):
-                    # Set session state to send to chatbot
-                    if "chatbot_preset" not in st.session_state or st.session_state.chatbot_preset is None:
-                        st.session_state.chatbot_preset = f"Let's practice {assignment['title']}"
-                        st.session_state.preset_locked = False  # Ensure it's processed only once
-                    st.switch_page("pages/chatbot.py")  # Navigate to Chatbot
+                    # Check if there's an existing session for this assignment
+                    existing_session = storage.get_session_by_assignment(
+                        lesson["week_or_day"], 
+                        assignment["title"]
+                    )
+                    
+                    if existing_session:
+                        # Show dialog to continue or start new
+                        st.session_state.practice_dialog = {
+                            "show": True,
+                            "lesson_key": lesson["week_or_day"],
+                            "assignment": assignment["title"],
+                            "existing_session_id": existing_session["session_id"]
+                        }
+                        st.rerun()
+                    else:
+                        # No existing session, create new one
+                        st.session_state.start_session_data = {
+                            "action": "new",
+                            "lesson_key": lesson["week_or_day"],
+                            "assignment": assignment["title"]
+                        }
+                        st.switch_page("pages/chatbot.py")
 
             # Delete button to remove task
             with col3:
                 if st.button("❌", key=f"delete_{i}_{j}"):
                     del st.session_state.lesson_plan[i]["assignments"][j]
                     storage.save_lesson_plan(st.session_state.lesson_plan)
-                    st.experimental_rerun()
+                    st.rerun()
 
         # Add a new assignment under each week/day
         new_task = st.text_input(f"➕ Add task for {lesson['week_or_day']}", key=f"new_task_{i}")
@@ -184,4 +242,4 @@ else:
             if new_task.strip():
                 st.session_state.lesson_plan[i]["assignments"].append({"title": new_task.strip(), "completed": False})
                 storage.save_lesson_plan(st.session_state.lesson_plan)
-                st.experimental_rerun()
+                st.rerun()

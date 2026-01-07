@@ -1,6 +1,6 @@
 {
-    "openai_model_name": "gpt-4o",
+    "openai_model_name": "gpt-5.2",
     "temperature": 0.7,
-    "language": "Polish"
+    "language": "German"
   }
   

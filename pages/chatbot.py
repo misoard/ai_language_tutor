@@ -25,17 +25,36 @@ LANGUAGE = config.get('language', 'English')
 # AI Response Function from the whole history
 def get_ai_response_history(messages):
     client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+    # Include system prompt if available
+    full_messages = [st.session_state.get("system_prompt")] if "system_prompt" in st.session_state else []
+    full_messages.extend(messages)
     response = client.chat.completions.create(
         model=OPENAI_MODEL,
-        messages=messages,
+        messages=full_messages,
         temperature=TEMPERATURE
     )
     return response.choices[0].message.content
 
+# --- Load user level and goals ---
+lesson_plan_inputs = storage.load_lesson_plan_inputs()
+user_level = lesson_plan_inputs.get("user_level", "Beginner") if lesson_plan_inputs else "Beginner"
+user_goals = lesson_plan_inputs.get("user_goals", "") if lesson_plan_inputs else ""
+
+# --- Get all previous session summaries for context ---
+session_summaries_context = storage.get_all_summaries()
+
 # --- Initialize session state for messages if not present ---
 if "messages" not in st.session_state:
     st.session_state.system_prompt = {"role": "system", "content": f"""
-        You are a friendly personal {LANGUAGE} language tutor, helping to improve speaking skills. You:
+        You are a friendly personal {LANGUAGE} language tutor, helping to improve speaking skills.
+        
+        **Student Profile:**
+        - Current level: {user_level}
+        - Learning goals: {user_goals if user_goals else "General language improvement"}
+        
+        {session_summaries_context}
+        
+        **Your role:**
         - Speak only in {LANGUAGE}, but provide translations if requested.
         - Plan lesson topics covering everyday situations, professional settings, and cultural aspects of {LANGUAGE} speaking countries.
         - Provide a list of key words and phrases for each topic, along with examples of usage.
@@ -45,14 +64,109 @@ if "messages" not in st.session_state:
         - Maintain a vocabulary list of new words and occasionally remind the user to use them in conversation.
         - Recommend additional materials: movies, books, podcasts, and articles in {LANGUAGE}.
         - Encourage the user to think in {LANGUAGE} and not be afraid of mistakes, creating a friendly and motivating learning environment.
+        - When practicing a specific assignment, monitor progress and suggest ending the session with a final test when you think the goals have been achieved.
         """}
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# --- Initialize current session ID if not present ---
+if "current_session_id" not in st.session_state:
+    st.session_state.current_session_id = None
+
+# --- Handle session creation/continuation from lesson plan ---
+if "start_session_data" in st.session_state and st.session_state.start_session_data:
+    session_data = st.session_state.start_session_data
+    
+    if session_data["action"] == "new":
+        # Create new session
+        session_id = storage.create_session(session_data["lesson_key"], session_data["assignment"])
+        st.session_state.current_session_id = session_id
+        st.session_state.messages = []
+        
+        # Add preset message
+        preset_message = f"Let's practice {session_data['assignment']}"
+        from datetime import datetime
+        st.session_state.messages.append({
+            "role": "user", 
+            "content": preset_message,
+            "timestamp": datetime.now().isoformat(),
+            "session_id": session_id
+        })
+        
+        # Get AI response
+        with st.spinner("Starting practice..."):
+            bot_reply = get_ai_response_history(st.session_state.messages)
+            st.session_state.messages.append({
+                "role": "assistant", 
+                "content": bot_reply,
+                "timestamp": datetime.now().isoformat(),
+                "session_id": session_id
+            })
+        
+        # Save to chat history
+        chat_history = storage.load_chat_history()
+        chat_history.extend(st.session_state.messages)
+        storage.save_chat_history(chat_history)
+        
+    elif session_data["action"] == "continue":
+        # Load existing session
+        st.session_state.current_session_id = session_data["session_id"]
+        # Load last 20 messages from this session
+        st.session_state.messages = storage.get_recent_messages(session_data["session_id"], limit=20)
+    
+    # Clear the session data
+    st.session_state.start_session_data = None
+    st.rerun()
+
 # --- 📖 Vocabulary Panel ---
 render_sidebar()
 st.sidebar.header("💬 Your Teaching Assistant")
+
+# --- Display Current Session ---
+if st.session_state.current_session_id:
+    current_session = storage.get_session(st.session_state.current_session_id)
+    if current_session:
+        from datetime import datetime
+        start_time = datetime.fromisoformat(current_session["start_time"]).strftime("%b %d, %I:%M %p")
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 📚 Current Session")
+        st.sidebar.markdown(f"**{current_session['lesson_key']}**")
+        st.sidebar.markdown(f"📝 {current_session['assignment']}")
+        st.sidebar.markdown(f"🕐 Started: {start_time}")
+        st.sidebar.markdown(f"Status: 🟢 In Progress")
+        st.sidebar.markdown("---")
+
+# --- Session Browser ---
+st.sidebar.markdown("### 📖 All Sessions")
+
+in_progress_sessions = storage.get_in_progress_sessions()
+completed_sessions = storage.get_completed_sessions()
+
+if in_progress_sessions:
+    with st.sidebar.expander(f"🟢 In Progress ({len(in_progress_sessions)})", expanded=False):
+        for session in in_progress_sessions:
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.markdown(f"**{session['assignment']}**")
+                st.caption(session['lesson_key'])
+            with col2:
+                if st.button("▶️", key=f"continue_{session['session_id']}", help="Continue"):
+                    st.session_state.start_session_data = {
+                        "action": "continue",
+                        "session_id": session["session_id"]
+                    }
+                    st.rerun()
+
+if completed_sessions:
+    with st.sidebar.expander(f"✅ Completed ({len(completed_sessions)})", expanded=False):
+        for session in completed_sessions:
+            st.markdown(f"**{session['assignment']}**")
+            st.caption(session['lesson_key'])
+            if st.button("👁️ View", key=f"view_{session['session_id']}", help="View in History"):
+                st.switch_page("pages/history.py")
+
+st.sidebar.markdown("---")
 
 # Load vocabulary list
 vocab_list = storage.load_vocabulary()
@@ -125,7 +239,7 @@ if st.sidebar.button("Add Word"):
             })
             storage.save_vocabulary(vocab_list)
             st.success(f"Added '{new_word}' with translation and example.")
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("Failed to fetch translation and example. Try again.")
 if vocab_list:
@@ -150,8 +264,110 @@ if st.sidebar.button("📝 Quiz!"):
         with st.spinner("Generating quiz..."):
             quiz_response = get_ai_response_history(st.session_state.messages + [{"role": "user", "content": quiz_prompt}])
 
-        st.session_state.messages.append({"role": "assistant", "content": quiz_response})
+        from datetime import datetime
+        st.session_state.messages.append({
+            "role": "assistant", 
+            "content": quiz_response,
+            "timestamp": datetime.now().isoformat(),
+            "session_id": st.session_state.current_session_id
+        })
         
+        # Save to chat history
+        chat_history = storage.load_chat_history()
+        chat_history.append(st.session_state.messages[-1])
+        storage.save_chat_history(chat_history)
+
+# --- End Session Button ---
+if st.session_state.current_session_id:
+    col1, col2, col3 = st.columns([1, 1, 3])
+    with col1:
+        if st.button("✓ End Session", type="primary"):
+            st.session_state.show_end_session_dialog = True
+            st.rerun()
+    with col2:
+        if st.button("🔄 New Free Chat"):
+            st.session_state.current_session_id = None
+            st.session_state.messages = []
+            st.rerun()
+
+# --- End Session Dialog ---
+if st.session_state.get("show_end_session_dialog", False):
+    with st.form("end_session_form"):
+        st.subheader("End Session")
+        st.write("Generating session summary...")
+        
+        # Generate summary using AI
+        session = storage.get_session(st.session_state.current_session_id)
+        session_messages = storage.get_messages_by_session(st.session_state.current_session_id)
+        
+        # Create summary prompt
+        conversation_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in session_messages])
+        
+        summary_prompt = f"""
+        Analyze this {LANGUAGE} language learning session and provide a detailed summary in JSON format.
+        
+        Assignment: {session['assignment']}
+        Conversation:
+        {conversation_text[:4000]}  
+        
+        Provide your analysis as valid JSON with these exact fields:
+        {{
+            "summary": "2-3 sentence overview of what was practiced",
+            "what_worked": "What the student did well",
+            "understood": "Concepts/grammar/vocabulary the student understood",
+            "difficulties": "Areas where the student struggled",
+            "common_mistakes": ["mistake 1", "mistake 2"]
+        }}
+        
+        Return ONLY valid JSON, no other text.
+        """
+        
+        with st.spinner("Analyzing session..."):
+            client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+            response = client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[{"role": "user", "content": summary_prompt}],
+                temperature=0.3
+            )
+            
+            import re
+            json_match = re.search(r'\{.*\}', response.choices[0].message.content, re.DOTALL)
+            if json_match:
+                summary_data = json.loads(json_match.group())
+            else:
+                summary_data = {
+                    "summary": "Session completed",
+                    "what_worked": "N/A",
+                    "understood": "N/A",
+                    "difficulties": "N/A",
+                    "common_mistakes": []
+                }
+        
+        # Display summary
+        st.markdown(f"**Summary:** {summary_data['summary']}")
+        st.markdown(f"**What worked:** {summary_data['what_worked']}")
+        st.markdown(f"**Understood:** {summary_data['understood']}")
+        st.markdown(f"**Difficulties:** {summary_data['difficulties']}")
+        
+        confirm = st.form_submit_button("Confirm & End Session")
+        cancel = st.form_submit_button("Cancel")
+        
+        if confirm:
+            # Save summary and complete session
+            storage.complete_session(st.session_state.current_session_id, summary_data)
+            storage.update_session(st.session_state.current_session_id, {"message_count": len(session_messages)})
+            
+            # Clear session
+            st.session_state.current_session_id = None
+            st.session_state.messages = []
+            st.session_state.show_end_session_dialog = False
+            st.success("Session ended and summary saved!")
+            st.rerun()
+        
+        if cancel:
+            st.session_state.show_end_session_dialog = False
+            st.rerun()
+
 # Display chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -160,7 +376,16 @@ for message in st.session_state.messages:
 # Chat interface
 user_input = st.chat_input("Type your message...")
 if user_input:
-    st.session_state.messages.append({"role": "user", "content": user_input})
+    from datetime import datetime
+    
+    # Add user message with metadata
+    user_msg = {
+        "role": "user", 
+        "content": user_input,
+        "timestamp": datetime.now().isoformat(),
+        "session_id": st.session_state.current_session_id
+    }
+    st.session_state.messages.append(user_msg)
 
     with st.chat_message("user"):
         st.write(user_input)
@@ -171,4 +396,23 @@ if user_input:
     with st.chat_message("assistant"):
         st.write(bot_reply)
 
-    st.session_state.messages.append({"role": "assistant", "content": bot_reply})
+    # Add assistant message with metadata
+    assistant_msg = {
+        "role": "assistant", 
+        "content": bot_reply,
+        "timestamp": datetime.now().isoformat(),
+        "session_id": st.session_state.current_session_id
+    }
+    st.session_state.messages.append(assistant_msg)
+    
+    # Save both messages to chat history
+    chat_history = storage.load_chat_history()
+    chat_history.extend([user_msg, assistant_msg])
+    storage.save_chat_history(chat_history)
+    
+    # Check if AI suggests ending session (only if in a session)
+    if st.session_state.current_session_id and "end this session" in bot_reply.lower():
+        st.info("💡 The AI thinks you've mastered this topic. Consider ending the session!")
+        if st.button("End Session Now"):
+            st.session_state.show_end_session_dialog = True
+            st.rerun()
