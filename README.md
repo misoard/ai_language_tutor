@@ -1,9 +1,15 @@
+Adapted from **Katsiaryna Ruksha** [Medium article](https://medium.com/@kate.ruksha/building-an-ai-powered-personal-language-tutor-with-chatgpt-59d2e4cd7f56).
+
+## Improvements
+- ✅ PDF/HTML summary generation of chats and lessons -- to keep track of what was learnt and what needs improvements
+- ✅ Progress, mistakes and summary of previous lessons included in the Agent prompt
+
+Below, written by **Katsiaryna Ruksha**:
+
 # AI Language Tutor
 
 ## 📌 Project Overview
 AI Language Tutor is a personal AI-powered language learning assistant built using **Streamlit** and **OpenAI's GPT models**. The app provides structured language learning with lesson plans, vocabulary tracking, quizzes, and AI-driven conversational practice.
-
-Check out full story in my [Medium article](https://medium.com/@kate.ruksha/building-an-ai-powered-personal-language-tutor-with-chatgpt-59d2e4cd7f56).
 
 ## 🚀 Features
 - **AI Chatbot Tutor** – Engage in real-time AI-powered conversations.
@@ -55,6 +61,7 @@ AI_LANGUAGE_TUTOR/
 Ensure you have **Python 3.8+** installed.
 
 ### **Installation Steps**
+0. **Fork the Repository**
 1. **Clone the Repository:**
    ```sh
    git clone https://github.com/your-repo/AI-Language-Tutor.git
@@ -82,16 +89,3 @@ Ensure you have **Python 3.8+** installed.
 4. **Add new words** to your vocabulary list for later review.
 5. **Take quizzes** to reinforce learning.
 6. **Review past conversations** in the history tab.
-
-## 🎯 Future Improvements
-- ✅ Text-to-speech integration for listening practice.
-- ✅ Speech-to-text integration for pronunciation practice.
-- ✅ Explore improvements with Agentic AI.
-
-## 👨‍💻 Author
-**Katsiaryna Ruksha**  
-Feel free to connect on [LinkedIn](https://www.linkedin.com/in/katsiaryna-ruksha-81b9837b/) or contribute to the project!
-
----
-🔹 *AI Language Tutor - Making Language Learning Smarter!*
-
